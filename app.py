@@ -4,55 +4,55 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 import io
+import os
 
-st.set_page_config(page_title="Nanopore Tab 4 to FASTQ", layout="wide")
+st.set_page_config(page_title="Nanopore to Benchling Trace", layout="wide")
+st.title("🧬 Nanopore to Benchling Trace Generator")
 
-st.title("🧬 Nanopore Confidence Visualizer")
-st.write("This tool turns your Tab 4 coverage data into a FASTQ file you can open in a trace viewer.")
+# 1. Look for the template you uploaded
+template_path = "template.ab1" # Make sure your file on GitHub is named exactly this
 
-uploaded_file = st.file_uploader("Upload your 4-tab Excel file", type=['xlsx'])
+if not os.path.exists(template_path):
+    st.error(f"Error: '{template_path}' not found in your GitHub repo. Please rename your .ab1 file to 'template.ab1'.")
+else:
+    uploaded_file = st.file_uploader("Upload your 4-tab Excel file", type=['xlsx'])
 
-if uploaded_file:
-    try:
-        # Load Tab 4 (Index 3)
-        df = pd.read_excel(uploaded_file, sheet_name=3)
-        
-        # Verify columns exist
-        required = ['POS', 'REF', 'Match', 'TotalReads']
-        if not all(col in df.columns for col in required):
-            st.error(f"Missing columns! Ensure Tab 4 has: {', '.join(required)}")
-        else:
-            st.write("### Data Preview (Tab 4)", df.head(5))
+    if uploaded_file:
+        try:
+            # 2. Load Tab 4 (Index 3)
+            df = pd.read_excel(uploaded_file, sheet_name=3)
+            st.write("### Data Preview (Tab 4)", df.head(3))
 
-            if st.button("Generate FASTQ with Confidence"):
-                # 1. Calculate Quality Score (0-40 scale)
-                # Formula: (Matches / Total) * 40
+            if st.button("Generate Trace for Benchling"):
+                # 3. Calculate Quality Scores (0-40)
+                # (Match / TotalReads) * 40
                 df['Quality'] = (df['Match'] / df['TotalReads'] * 40).fillna(0).round().astype(int).clip(upper=40)
                 
-                # 2. Build the Sequence Record
-                seq_str = "".join(df['REF'].astype(str).str.upper())
-                quals = df['Quality'].tolist()
-                
-                record = SeqRecord(
-                    Seq(seq_str), 
-                    id="Nanopore_Sample", 
-                    description="Converted_from_Tab4_Coverage"
-                )
-                record.letter_annotations["phred_quality"] = quals
+                new_seq_str = "".join(df['REF'].astype(str).str.upper())
+                new_quals = df['Quality'].tolist()
 
-                # 3. Export to FASTQ (Works perfectly in Biopython)
-                output = io.StringIO()
-                SeqIO.write(record, output, "fastq")
+                # 4. Load the template and SWAP the data
+                # We read the template metadata and replace the sequence/quality
+                with open(template_path, "rb") as h:
+                    record = SeqIO.read(h, "abi")
                 
-                st.success(f"Processed {len(df)} bases. FASTQ ready!")
+                # Overwrite the template's old sequence and quality
+                record.seq = Seq(new_seq_str)
+                record.letter_annotations["phred_quality"] = new_quals
+                
+                # 5. Export the 'Hacked' File
+                output = io.BytesIO()
+                SeqIO.write(record, output, "abi")
+                
+                st.success(f"Success! Replaced template data with {len(new_seq_str)} Nanopore bases.")
                 st.download_button(
-                    label="📥 Download FASTQ File",
+                    label="📥 Download .ab1 for Benchling",
                     data=output.getvalue(),
-                    file_name="nanopore_confidence.fastq",
-                    mime="text/plain"
+                    file_name="nanopore_benchling_trace.ab1",
+                    mime="application/octet-stream"
                 )
 
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
 
-st.info("💡 **How to view:** Download the FASTQ and drag it into **SnapGene Viewer**. You will see your sequence with the confidence bars underneath.")
+st.info("💡 **Benchling Tip:** After downloading, import this into a Benchling Alignment. You will see your Nanopore confidence scores as vertical bars!")
